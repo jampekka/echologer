@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../index.coffee"],
+  "sourcesContent": ["(function() {\n  console.log(\"Jou2\");\n\n}).call(this);\n"],
+  "mappings": ";;;;;;;AAAA;AAAA;AAAA,OAAC,WAAW;AACV,gBAAQ,IAAI,MAAM;AAAA,MAEpB,GAAG,KAAK,OAAI;AAAA;AAAA;",
+  "names": []
+}
