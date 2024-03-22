@@ -146,9 +146,11 @@ main = () ->
     graph = get_graph ctx, config
 
 
+    dry_gain = new GainNode ctx
+    dry_gain.gain.value = config.dry ? 1
 
     connect input, graph, output
-    connect input, output
+    connect input, dry_gain, output
 
     if not interactive
         outdata = await ctx.startRendering()
