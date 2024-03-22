@@ -54,7 +54,7 @@ get_reflector = (ctx, {listener, position, decay}) ->
     console.log delay
     get_echo ctx, gain: gain, delay: delay, panning: panning
 
-get_echo = (ctx, {gain, delay, panning}) ->
+get_echo = (ctx, {gain, delay, panning=0.0}) ->
     gainer = ctx.createGain()
     gainer.gain.value = gain
     delayer = ctx.createDelay()
@@ -80,11 +80,24 @@ get_graph = (ctx, config) ->
     input = ctx.createGain()
     output = ctx.createGain()
 
-    for reflector in config.reflectors
+    output.gain.value = config.wet ? 1
+
+    for reflector in config.reflectors ? []
             reflector.listener ?= config.listener
             node = get_reflector(ctx, reflector)
             connect input, node, output
 
+    for echo in config.echos ? []
+        # Negative gains are interpreted as decibels.
+        # Quite hacky, but makes things simpler.
+        if echo.gain <= 0
+            # TODO: Find out once for all if this should be
+            # squared (i.e. factor 20) or not (i.e. factor 10).
+            echo.gain = 10**(echo.gain/10)
+        node = get_echo ctx, echo
+        connect input, node, output
+
+    
     input: input
     output: output
 
@@ -125,7 +138,7 @@ main = () ->
         input.buffer = input_data
         input.start()
 
-    output = ctx.destination   
+    output = ctx.destination
 
     config = fs.readFileSync process.stdin.fd, 'utf-8'
     config = CSON.parse config
