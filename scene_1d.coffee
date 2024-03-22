@@ -3,9 +3,21 @@
 # TODO: Split to library and node.js executable
 
 waa = require 'node-web-audio-api'
-{AudioContext, mediaDevices, GainNode, DelayNode, AudioDestinationNode} = waa
+{AudioContext,
+mediaDevices,
+GainNode,
+DelayNode,
+AudioDestinationNode,
+AudioBufferSourceNode,
+OfflineAudioContext} = waa
+fs = require 'fs'
+CSON = require 'cson'
+toWav = require 'audiobuffer-to-wav'
 
 speed_of_sound = 331 # 0⁰C
+
+log = (args...) ->
+    console.error args...
 
 is_webaudio_node = (node) ->
     # A hack to check if an object is an AudioNode
@@ -14,6 +26,7 @@ is_webaudio_node = (node) ->
     # https://github.com/ircam-ismm/node-web-audio-api/issues/97
     return true if Object.getPrototypeOf(node.constructor).name == "AudioNode"
     return true if node instanceof AudioDestinationNode
+    return true if node instanceof AudioBufferSourceNode
 
     return false
     console.log Object.getPrototypeOf(node.constructor).name
@@ -35,10 +48,10 @@ get_reflector = (ctx, {listener, position, decay}) ->
     length = Math.abs(rel_pos)*2
     
     # Hacky supergain
-    gain = 500/(1 + length)**2
+    gain = 200/(1 + length)**2
     delay = length/speed_of_sound
     panning = Math.sign(rel_pos)
-
+    console.log delay
     get_echo ctx, gain: gain, delay: delay, panning: panning
 
 get_echo = (ctx, {gain, delay, panning}) ->
@@ -75,24 +88,67 @@ get_graph = (ctx, config) ->
     input: input
     output: output
 
-
+load_audio_buffer = (ctx, path) ->
+    data = fs.readFileSync(path).buffer
+    await ctx.decodeAudioData data
+    
 main = () ->
-    fs = require 'fs'
-    CSON = require 'cson'
 
-    ctx = new AudioContext()
+    input_file = process.argv[2]
+
+    interactive = process.stdout.isTTY
+
+    if not interactive and not input_file
+        throw "Output file rendering currently requires an input file"
+
+    ctx = online_ctx = new AudioContext()
+        
+    if input_file
+        input_data = await load_audio_buffer online_ctx, input_file
+    else
+        input = await get_microphone ctx, mediaDevices
+    
+
+    if not interactive
+        # TODO: Could be smarter about the length padding
+        sr = input_data.sampleRate
+        len = input_data.length
+        ctx = new OfflineAudioContext(
+            numberOfChannels: 2
+            length: len + sr*3, # 3 seconds padding, could infer from graph latency
+            sampleRate: sr
+        )
+        online_ctx.close()
+    
+    if input_data
+        input = ctx.createBufferSource()
+        input.buffer = input_data
+        input.start()
+
+    output = ctx.destination   
 
     config = fs.readFileSync process.stdin.fd, 'utf-8'
     config = CSON.parse config
 
     graph = get_graph ctx, config
 
-    input = await get_microphone ctx, mediaDevices
-    output = ctx.destination
+
 
     connect input, graph, output
     connect input, output
-    console.log "Connected"
+
+    if not interactive
+        outdata = await ctx.startRendering()
+        
+        wav = toWav outdata
+
+        # TODO: Writing to file descriptor produces garbage,
+        # so using /dev/stdout. Not sure why.
+        fs.writeFileSync "/dev/stdout", Buffer.from(wav)
+        # The offline context can't be closed apparently, and the
+        # process doesn't exit if its not
+        # ctx.close()
+        process.exit()
     
 
 if require? and require.main == module
