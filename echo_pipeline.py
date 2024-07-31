@@ -68,31 +68,35 @@ def main(args):
     """
     
     device = "hw:CARD=US4x4HR,DEV=0"
+    
+    jack_format = 'audio/x-raw,channels=4,rate=(int)48000,format=F32LE,layout=interleaved,channel-mask=(bitmask)0x0'
+    webrtc_format = 'audio/x-raw,channels=4,rate=(int)48000,format=F32LE,layout=non-interleaved,channel-mask=(bitmask)0x0'
+    mono_format = 'audio/x-raw,channels=1,rate=(int)48000,format=F32LE,layout=interleaved'
 
     full = f"""
-        jackaudiosrc port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! audio/x-raw,channels=4,format=F32LE,channel-mask=(bitmask)0x0
+        jackaudiosrc low-latency=true port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! {jack_format}
+        #! audioconvert input-channels-reorder-mode=force
         #alsasrc device={device} ! audio/x-raw,channels=4
         #autoaudiosrc ! audio/x-raw,channels=4
         #audiotestsrc ! audio/x-raw,channels=4,channel-mask=0x0000000000000033
 
-        #! audioconvert ! webrtcdsp
-        #    gain-control=false
-        #    high-pass-filter=false
-        #    delay-agnostic=true
-        #    extended-filter=true
-        #    noise-suppression=true
-        #    echo-suppression-level=moderate
-        #    echo-cancel=true
-        ! deinterleave name=mic
+        #! audioconvert ! {webrtc_format} ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=true extended-filter=true noise-suppression=false echo-suppression-level=moderate echo-cancel=true
+        ! audioconvert ! {jack_format} ! deinterleave name=mic
         
-        interleave name=out
+        interleave channel-positions-from-input=false name=out
 
-        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_0
-        mic.src_1 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_1
-        mic.src_2 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_2
-        mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_3
+        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_0
+        mic.src_1 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_1
+        mic.src_2 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_2
+        mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_3
         
-        out.src ! audio/x-raw,channels=4,channel-mask=(bitmask)0x0 ! volume volume=0.1 name=mixed
+        #mic.src_0 ! {mono_format} ! volume volume=1.0 ! queue ! out.sink_0
+        #mic.src_1 ! {mono_format} ! volume volume=1.0 ! queue ! out.sink_1
+        #mic.src_2 ! {mono_format} ! volume volume=1.0 ! queue ! out.sink_2
+        #mic.src_3 ! {mono_format} ! volume volume=1.0 ! queue ! out.sink_3
+ 
+
+        out.src ! audioconvert ! {jack_format} ! volume volume=0.1 name=mixed
 
         #! audioconvert mix-matrix="<
         #    <0.5, 0.5, 0.0, 0.0>,
@@ -100,11 +104,11 @@ def main(args):
         #    <0.0, 0.0, 0.5, 0.5>,
         #    <0.5, 0.0, 0.0, 0.5>>"
         
-        #! audioconvert ! webrtcechoprobe
+        ! audioconvert name=to_probe ! {webrtc_format} ! webrtcechoprobe ! audioconvert ! {jack_format}
         
         #! autoaudiosink filter-caps=audio/x-raw,channels=4 name=dst
         # ! alsasink device={device}
-        mixed. ! jackaudiosink name=speakers
+        ! audioconvert ! {jack_format} ! audioconvert ! jackaudiosink name=speakers
         #! audioconvert ! pipewiresink mode=default
         #! audioconvert ! jackaudiosink
         #! audioconvert ! alsasink
@@ -112,27 +116,47 @@ def main(args):
     
     pre_delay = 0.1
     stereo = f"""
-        alsasrc device={device} ! audio/x-raw,channels=4
-        #autoaudiosrc
+        autoaudiosrc
 
-        ! audioconvert ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=true noise-suppression=false echo-suppression-level=low echo-cancel=true
+        ! audioconvert ! audio/x-raw,layout=interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=true noise-suppression=false echo-suppression-level=low echo-cancel=true
         ! deinterleave name=mic
         
         interleave name=out
 
-        #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - pre_delay} !  out.sink_0
-        #mic.src_1 ! volume volume=0.1 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.5 - pre_delay} !  out.sink_1
-        #mic.src_2 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_2
-        #mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.5 !  out.sink_3
+        #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - pre_delay} ! out.sink_0
+        #mic.src_1 ! volume volume=0.1 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.5 - pre_delay} ! out.sink_1
         
-        #mic.src_0 ! out.sink_0
-        #mic.src_1 ! out.sink_1
-        #mic.src_2 ! out.sink_2
-        #mic.src_2 ! out.sink_3
+        mic.src_0 ! queue ! out.sink_0
+        mic.src_1 ! queue ! out.sink_1
 
         out.src
-        ! calf-sourceforge-net-plugins-Reverb amount=0.1 dry=0.5 decay-time=0.5 on=true
-        ! volume volume=0.001
+        #! calf-sourceforge-net-plugins-Reverb amount=0.1 dry=0.5 decay-time=0.5 on=true
+        ! audioconvert ! volume volume=0.1
+
+        ! audioconvert ! audio/x-raw,layout=interleaved ! webrtcechoprobe
+        
+        ! autoaudiosink
+
+    """
+
+    stereo_jack = f"""
+        jackaudiosrc low-latency=true port-names="system:capture_1,system:capture_3" connect=explicit name=inputs client-name=echosim
+        #! audioconvert input-channels-reorder-mode=force
+        #alsasrc device={device} ! audio/x-raw,channels=4
+        #autoaudiosrc ! audio/x-raw,channels=4
+        #audiotestsrc ! audio/x-raw,channels=4,channel-mask=0x0000000000000033
+
+        ! queue ! audioconvert !  audio/x-raw,layout=non-interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=true extended-filter=true noise-suppression=false echo-suppression-level=moderate echo-cancel=true
+        ! audioconvert ! deinterleave name=mic
+        
+        interleave name=out
+
+        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_0
+        mic.src_1 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_1
+        #mic.src_2 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_2
+        #mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_3
+        
+        out.src ! volume volume=0.1 name=mixed
 
         #! audioconvert mix-matrix="<
         #    <0.5, 0.5, 0.0, 0.0>,
@@ -140,14 +164,32 @@ def main(args):
         #    <0.0, 0.0, 0.5, 0.5>,
         #    <0.5, 0.0, 0.0, 0.5>>"
         
-        ! audioconvert ! webrtcechoprobe
+        ! audioconvert name=to_probe ! audio/x-raw,layout=non-interleaved ! webrtcechoprobe ! queue ! audioconvert
         
         #! autoaudiosink filter-caps=audio/x-raw,channels=4 name=dst
-        #! audioconvert ! autoaudiosink
-        ! alsasink device={device}
+        # ! alsasink device={device}
+        ! jackaudiosink name=speakers
         #! audioconvert ! pipewiresink mode=default
         #! audioconvert ! jackaudiosink
         #! audioconvert ! alsasink
+    """
+
+    unecho = f"""
+        #jackaudiosrc port-names="system:capture_1,system:capture_3" connect=explicit name=inputs client-name=echosim
+        alsasrc ! audio/x-raw,rate=48000
+        #jackaudiosrc name=inputs client-name=echosim ! queue
+        
+        
+        ! queue ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=false noise-suppression=false echo-suppression-level=moderate echo-cancel=true
+        ! queue ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcechoprobe
+        ! queue ! audioconvert ! alsasink name=speakers
+       #! tee name=unecho
+        
+        #audiotestsrc ! dst.
+
+        #! dst.
+        #! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcechoprobe ! audioconvert ! dst.
+        
     """
 
     testsrc = f"""
@@ -207,7 +249,7 @@ def main(args):
 
     try:
         loop.run()
-    except e:
+    except:
         pass
 
     Gst.debug_bin_to_dot_file(pipeline, Gst.DebugGraphDetails.ALL, "pipeline")
