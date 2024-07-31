@@ -31,7 +31,9 @@ def element(name, props={}):
 def stripcomments(txt):
     out = []
     for line in txt.split('\n'):
-        out.append(line.split("#",1)[0])
+        line = line.split("#",1)[0]
+        if not line.strip(): continue
+        out.append(line)
         #if line.strip().startswith('#'): continue
         #out.append(line)
     
@@ -80,7 +82,7 @@ def main(args):
         #autoaudiosrc ! audio/x-raw,channels=4
         #audiotestsrc ! audio/x-raw,channels=4,channel-mask=0x0000000000000033
 
-        #! audioconvert ! {webrtc_format} ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=true extended-filter=true noise-suppression=false echo-suppression-level=moderate echo-cancel=true
+        ! audioconvert ! {webrtc_format} ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=true extended-filter=true noise-suppression=false echo-suppression-level=moderate echo-cancel=true
         ! audioconvert ! {jack_format} ! deinterleave name=mic
         
         interleave channel-positions-from-input=false name=out
@@ -115,25 +117,29 @@ def main(args):
     """
     
     pre_delay = 0.1
-    stereo = f"""
-        autoaudiosrc
+    
 
-        ! audioconvert ! audio/x-raw,layout=interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=true noise-suppression=false echo-suppression-level=low echo-cancel=true
-        ! deinterleave name=mic
+    stream_format = 'audio/x-raw,rate=48000,layout=interleaved,format=S16LE'
+    mono_format = 'audio/x-raw,rate=48000,layout=interleaved,format=F32LE,channels=1'
+    webrtc_format = 'audio/x-raw,rate=48000,layout=interleaved,format=S16LE'
+    stereo = f"""
+        autoaudiosrc ! {stream_format}
+        ! audioconvert ! {webrtc_format} ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=true noise-suppression=false echo-suppression-level=low echo-cancel=true
+        ! audioconvert ! {stream_format} ! deinterleave name=mic
         
         interleave name=out
 
         #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - pre_delay} ! out.sink_0
         #mic.src_1 ! volume volume=0.1 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.5 - pre_delay} ! out.sink_1
         
-        mic.src_0 ! queue ! out.sink_0
-        mic.src_1 ! queue ! out.sink_1
+        mic.src_0 ! audioconvert ! {mono_format} ! queue ! out.sink_0
+        mic.src_1 ! audioconvert ! {mono_format} ! queue ! out.sink_1
 
         out.src
         #! calf-sourceforge-net-plugins-Reverb amount=0.1 dry=0.5 decay-time=0.5 on=true
         ! audioconvert ! volume volume=0.1
 
-        ! audioconvert ! audio/x-raw,layout=interleaved ! webrtcechoprobe
+        ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcechoprobe
         
         ! autoaudiosink
 
@@ -175,14 +181,16 @@ def main(args):
     """
 
     unecho = f"""
-        #jackaudiosrc port-names="system:capture_1,system:capture_3" connect=explicit name=inputs client-name=echosim
-        alsasrc ! audio/x-raw,rate=48000
+        jackaudiosrc port-names="system:capture_1,system:capture_3" connect=explicit name=inputs client-name=echosim
+        #alsasrc 
         #jackaudiosrc name=inputs client-name=echosim ! queue
         
-        
-        ! queue ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=false noise-suppression=false echo-suppression-level=moderate echo-cancel=true
-        ! queue ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcechoprobe
-        ! queue ! audioconvert ! alsasink name=speakers
+        ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=false noise-suppression=false echo-suppression-level=moderate echo-cancel=true
+        #! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=false noise-suppression=false echo-suppression-level=moderate echo-cancel=false
+        ! audioconvert ! volume volume=0.1
+        ! audioconvert ! audio/x-raw,layout=non-interleaved ! webrtcechoprobe
+        #! queue ! audioconvert ! alsasink name=speakers
+        ! audioconvert ! jackaudiosink name=speakers
        #! tee name=unecho
         
         #audiotestsrc ! dst.
@@ -216,6 +224,8 @@ def main(args):
 
     #(bitmask)0x0000000000000107
     pipeline = Gst.parse_launch(stripcomments(full))
+    #pipeline.set_property('async-handling', True)
+    #pipeline.set_property('delay', 1000)
     
     """
     out = pipeline.get_by_name('out')
