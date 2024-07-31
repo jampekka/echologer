@@ -1,14 +1,16 @@
 echos: [
-    delay: 0.189, gain: -22.2, panning: -1
+    #delay: 0.189, gain: -22.2, panning: 1
+    delay: 0.189, gain: -30.2, panning: 1
 ,
-    delay: 0.645, gain: -37.6, panning: 1
+    delay: 0.645, gain: -37.6, panning: -1
 ,
-    delay: 0.784, gain: -40.6, panning: -1
+    delay: 0.784, gain: -40.6, panning: 1
 ,
-    delay: 0.965, gain: -39.8, panning: 1
+    delay: 0.965, gain: -39.8, panning: -1
 ,
-    delay: 1.316, gain: -42.5, panning: -1
+    delay: 1.316, gain: -42.5, panning: 1
 ,
-    delay: 1.605, gain: -43.3, panning: 1
+    delay: 1.605, gain: -43.3, panning: -1
 ]
-wet: 10.0
+wet: 500.0
+dry: 0.0

@@ -1,6 +1,8 @@
 listener: 40
 reflectors: [
     position: 0
-,
-    position: 120
-]
+	#,
+    	#position: 120
+],
+dry: 0
+wet: 20.0

@@ -3,8 +3,8 @@ esbuild = require 'esbuild'
 
 context = () ->
     ctx = await esbuild.context
-        entryPoints: ['index.coffee']
-        outdir: 'dist'
+        entryPoints: ['index.coffee', 'scene_web.coffee']
+        outdir: '.'
         sourcemap: true
         bundle: true
         plugins: [coffeeScriptPlugin()]

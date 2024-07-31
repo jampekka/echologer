@@ -70,39 +70,41 @@ def main(args):
     device = "hw:CARD=US4x4HR,DEV=0"
 
     full = f"""
-        alsasrc device={device} ! audio/x-raw,channels=4
+        jackaudiosrc ! audio/x-raw,channels=4,format=F32LE,channel-mask=(bitmask)0x0
+        #alsasrc device={device} ! audio/x-raw,channels=4
         #autoaudiosrc ! audio/x-raw,channels=4
         #audiotestsrc ! audio/x-raw,channels=4,channel-mask=0x0000000000000033
 
-        ! audioconvert ! webrtcdsp
-            gain-control=false
-            high-pass-filter=false
-            delay-agnostic=true
-            extended-filter=true
-            noise-suppression=true
-            echo-suppression-level=moderate
-            echo-cancel=true
+        #! audioconvert ! webrtcdsp
+        #    gain-control=false
+        #    high-pass-filter=false
+        #    delay-agnostic=true
+        #    extended-filter=true
+        #    noise-suppression=true
+        #    echo-suppression-level=moderate
+        #    echo-cancel=true
         ! deinterleave name=mic
         
         interleave name=out
 
         mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_0
-        mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_1
-        mic.src_2 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_2
-        mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.5 !  out.sink_3
+        mic.src_1 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_1
+        mic.src_2 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_2
+        mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_3
         
-        out.src ! volume volume=1.0
+        out.src ! volume volume=0.1
 
-        ! audioconvert mix-matrix="<
-            <0.5, 0.5, 0.0, 0.0>,
-            <0.0, 0.5, 0.5, 0.0>,
-            <0.0, 0.0, 0.5, 0.5>,
-            <0.5, 0.0, 0.0, 0.5>>"
+        #! audioconvert mix-matrix="<
+        #    <0.5, 0.5, 0.0, 0.0>,
+        #    <0.0, 0.5, 0.5, 0.0>,
+        #    <0.0, 0.0, 0.5, 0.5>,
+        #    <0.5, 0.0, 0.0, 0.5>>"
         
-        ! audioconvert ! webrtcechoprobe
+        #! audioconvert ! webrtcechoprobe
         
-        ! autoaudiosink filter-caps=audio/x-raw,channels=4 name=dst
-        alsasink device={device}
+        #! autoaudiosink filter-caps=audio/x-raw,channels=4 name=dst
+        # ! alsasink device={device}
+        ! jackaudiosink
         #! audioconvert ! pipewiresink mode=default
         #! audioconvert ! jackaudiosink
         #! audioconvert ! alsasink
@@ -110,22 +112,27 @@ def main(args):
     
     pre_delay = 0.1
     stereo = f"""
-        #alsasrc device={device} ! audio/x-raw,channels=4
-        autoaudiosrc
+        alsasrc device={device} ! audio/x-raw,channels=4
+        #autoaudiosrc
 
         ! audioconvert ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=false extended-filter=true noise-suppression=false echo-suppression-level=low echo-cancel=true
         ! deinterleave name=mic
         
         interleave name=out
 
-        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - pre_delay} !  out.sink_0
-        mic.src_1 ! volume volume=0.1 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.5 - pre_delay} !  out.sink_1
+        #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - pre_delay} !  out.sink_0
+        #mic.src_1 ! volume volume=0.1 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.5 - pre_delay} !  out.sink_1
         #mic.src_2 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_2
         #mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.5 !  out.sink_3
         
+        #mic.src_0 ! out.sink_0
+        #mic.src_1 ! out.sink_1
+        #mic.src_2 ! out.sink_2
+        #mic.src_2 ! out.sink_3
+
         out.src
         ! calf-sourceforge-net-plugins-Reverb amount=0.1 dry=0.5 decay-time=0.5 on=true
-        ! volume volume=1.0
+        ! volume volume=0.001
 
         #! audioconvert mix-matrix="<
         #    <0.5, 0.5, 0.0, 0.0>,
@@ -136,8 +143,8 @@ def main(args):
         ! audioconvert ! webrtcechoprobe
         
         #! autoaudiosink filter-caps=audio/x-raw,channels=4 name=dst
-        ! audioconvert ! autoaudiosink
-        #! alsasink device={device}
+        #! audioconvert ! autoaudiosink
+        ! alsasink device={device}
         #! audioconvert ! pipewiresink mode=default
         #! audioconvert ! jackaudiosink
         #! audioconvert ! alsasink
@@ -161,11 +168,12 @@ def main(args):
     """
     
     minimal = f"""
-        alsasrc device={device} ! audio/x-raw,rate=48000,channels=4 ! volume volume=0.01 ! alsasink device={device}
+        jackaudiosrc ! audio/x-raw,channels=4,format=F32LE,channel-mask=(bitmask)0x0
+        ! volume volume=0.1 ! jackaudiosink
     """
 
     #(bitmask)0x0000000000000107
-    pipeline = Gst.parse_launch(stripcomments(stereo))
+    pipeline = Gst.parse_launch(stripcomments(full))
     
     """
     out = pipeline.get_by_name('out')
