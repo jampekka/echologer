@@ -70,7 +70,7 @@ def main(args):
     device = "hw:CARD=US4x4HR,DEV=0"
 
     full = f"""
-        jackaudiosrc ! audio/x-raw,channels=4,format=F32LE,channel-mask=(bitmask)0x0
+        jackaudiosrc port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! audio/x-raw,channels=4,format=F32LE,channel-mask=(bitmask)0x0
         #alsasrc device={device} ! audio/x-raw,channels=4
         #autoaudiosrc ! audio/x-raw,channels=4
         #audiotestsrc ! audio/x-raw,channels=4,channel-mask=0x0000000000000033
@@ -92,7 +92,7 @@ def main(args):
         mic.src_2 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_2
         mic.src_3 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 !  out.sink_3
         
-        out.src ! volume volume=0.1
+        out.src ! audio/x-raw,channels=4,channel-mask=(bitmask)0x0 ! volume volume=0.1 name=mixed
 
         #! audioconvert mix-matrix="<
         #    <0.5, 0.5, 0.0, 0.0>,
@@ -104,7 +104,7 @@ def main(args):
         
         #! autoaudiosink filter-caps=audio/x-raw,channels=4 name=dst
         # ! alsasink device={device}
-        ! jackaudiosink
+        mixed. ! jackaudiosink name=speakers
         #! audioconvert ! pipewiresink mode=default
         #! audioconvert ! jackaudiosink
         #! audioconvert ! alsasink
