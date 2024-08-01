@@ -76,6 +76,20 @@ def main(args):
     mono_format = 'audio/x-raw,channels=1,rate=(int)48000,format=F32LE,layout=interleaved'
     
     lag = 0.25 # TODO: measure and reduce!
+    
+    def channel_echo(delay, decay=None, wet=None):
+        true_delay = min(5, delay - lag)
+        if decay is None:
+            decay = min(15.0, max((1 + delay)**3, 0.4))
+        if wet is None:
+            wet = 1/(1 + delay*3)**2
+            if wet < 0.1: wet = 0.0
+        
+        print(dict(delay=delay, wet=wet, decay=decay))
+        return f"""
+            ladspa-delay-so-delay-5s dry-wet-balance=1 delay={true_delay} ! audioconvert
+            ! calf-sourceforge-net-plugins-Reverb diffusion=1  amount={wet} decay-time={decay} dry={1 - wet} on=true ! audioconvert
+            """
 
     full = f"""
         jackaudiosrc low-latency=true port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! {jack_format} ! tee name=audiosrc
@@ -91,19 +105,28 @@ def main(args):
 
         # We seem to need queues here or the pipeline stalls. Could try
         # to find a nicer place for this. Now we ramp up four threads
-        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_0
-        mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_1
-        mic.src_2 ! volume volume=0.2 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.50 - lag} ! out.sink_2
-        mic.src_3 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_3
+        #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_0
+        #mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_1
+        #mic.src_2 ! volume volume=0.2 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.50 - lag} ! out.sink_2
+        #mic.src_3 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_3
         
+        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! {channel_echo(0.25, 0.4, 0.1)} ! out.sink_0
+        mic.src_1 ! volume volume=0.01 ! queue ! audioconvert ! {channel_echo(0.6, 3, 1.0)} ! out.sink_1
+        mic.src_2 ! volume volume=0.1 ! queue ! audioconvert ! {channel_echo(0.5, 0.6, 0.5)} ! out.sink_2
+        mic.src_3 ! volume volume=0.01 ! queue ! audioconvert ! {channel_echo(0.7, 3, 1.0)} ! out.sink_3
+        
+
+
         #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.0 ! out.sink_0
         #mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_1
         #mic.src_2 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.50 ! out.sink_2
         #mic.src_3 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_3
 
+        
 
-
-        out.src ! audioconvert ! {jack_format} ! volume volume=0.5 name=mixed
+        out.src ! audioconvert ! {jack_format}
+        ! volume volume=0.5 name=mixed
+        ! audioecho
 
         ! audioconvert mix-matrix="<
             <0.5, 0.0, 0.0, 0.5>,
