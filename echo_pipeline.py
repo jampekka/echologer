@@ -74,9 +74,11 @@ def main(args):
     jack_format = 'audio/x-raw,channels=4,rate=(int)48000,format=F32LE,layout=interleaved,channel-mask=(bitmask)0x0'
     webrtc_format = 'audio/x-raw,channels=4,rate=(int)48000,format=F32LE,layout=non-interleaved,channel-mask=(bitmask)0x0'
     mono_format = 'audio/x-raw,channels=1,rate=(int)48000,format=F32LE,layout=interleaved'
+    
+    lag = 0.25 # TODO: measure and reduce!
 
     full = f"""
-        jackaudiosrc low-latency=true port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! {jack_format}
+        jackaudiosrc low-latency=true port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! {jack_format} ! tee name=audiosrc
         #! audioconvert input-channels-reorder-mode=force
         #alsasrc device={device} ! audio/x-raw,channels=4
         #autoaudiosrc ! audio/x-raw,channels=4
@@ -87,10 +89,19 @@ def main(args):
         
         interleave channel-positions-from-input=false name=out
 
-        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_0
-        mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_1
-        mic.src_2 ! volume volume=0.2 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.50 ! out.sink_2
-        mic.src_3 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_3
+        # We seem to need queues here or the pipeline stalls. Could try
+        # to find a nicer place for this. Now we ramp up four threads
+        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_0
+        mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_1
+        mic.src_2 ! volume volume=0.2 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.50 - lag} ! out.sink_2
+        mic.src_3 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time={0.25 - lag} ! out.sink_3
+        
+        #mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.0 ! out.sink_0
+        #mic.src_1 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_1
+        #mic.src_2 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.50 ! out.sink_2
+        #mic.src_3 ! volume volume=0.0 ! queue ! audioconvert ! ladspa-delay-1898-so-delay-c delay-time=0.25 ! out.sink_3
+
+
 
         out.src ! audioconvert ! {jack_format} ! volume volume=0.5 name=mixed
 
@@ -102,7 +113,7 @@ def main(args):
 
         ! audioconvert ! {webrtc_format} ! webrtcechoprobe
         
-        ! audioconvert ! {jack_format} ! audioconvert ! jackaudiosink name=speakers
+        ! audioconvert ! {jack_format} ! jackaudiosink name=speakers
     """
     
     pre_delay = 0.1
