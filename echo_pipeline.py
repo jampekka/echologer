@@ -37,7 +37,7 @@ def stripcomments(txt):
         #if line.strip().startswith('#'): continue
         #out.append(line)
     
-    print(' '.join(out))
+    print('\n'.join(out))
     out = '\n'.join(out)
     
     return out
@@ -138,6 +138,47 @@ def main(args):
         
         ! audioconvert ! {jack_format} ! jackaudiosink name=speakers
     """
+    
+    zerolagger = "ladspa-delay-so-delay-5s dry-wet-balance=0.5 delay=0.1 ! audioconvert ! calf-sourceforge-net-plugins-Reverb diffusion=1  amount=0.0 decay-time=3 dry=1.0 on=true ! audioconvert"
+
+    lagtest = f"""
+        jackaudiosrc low-latency=true port-names="system:capture_1,system:capture_2,system:capture_3,system:capture_4" connect=explicit name=inputs client-name=echosim ! {jack_format}
+
+        ! audioconvert ! {webrtc_format} ! webrtcdsp gain-control=false high-pass-filter=false delay-agnostic=true extended-filter=true noise-suppression=true echo-suppression-level=high echo-cancel=true
+        ! audioconvert ! {jack_format} ! deinterleave name=mic
+        
+        interleave channel-positions-from-input=false name=out
+
+        # We seem to need queues here or the pipeline stalls. Could try
+        # to find a nicer place for this. Now we ramp up four threads
+        
+        mic.src_0 ! volume volume=1.0 ! queue ! audioconvert ! {channel_echo(0.0, 0.4, 0.0)} ! out.sink_0
+        mic.src_1 ! volume volume=0.01 ! queue ! audioconvert ! {channel_echo(0.0, 3, 0.0)} ! out.sink_1
+        mic.src_2 ! volume volume=0.1 ! queue ! audioconvert ! {channel_echo(0.0, 0.6, 0.0)} ! out.sink_2
+        mic.src_3 ! volume volume=0.01 ! queue ! audioconvert ! {channel_echo(0.0, 3, 0.0)} ! out.sink_3
+        
+
+
+        #mic.src_0 ! volume volume=1.0 ! queue ! {zerolagger} ! out.sink_0
+        #mic.src_1 ! volume volume=0.0 ! queue ! {zerolagger} ! out.sink_1
+        #mic.src_2 ! volume volume=0.0 ! queue ! {zerolagger} ! out.sink_2
+        #mic.src_3 ! volume volume=0.0 ! queue ! {zerolagger} ! out.sink_3
+        
+
+        out.src ! audioconvert ! {jack_format}
+        ! volume volume=0.5 name=mixed
+
+        ! audioconvert mix-matrix="<
+            <0.5, 0.0, 0.0, 0.5>,
+            <0.5, 0.5, 0.0, 0.0>,
+            <0.0, 0.5, 0.5, 0.0>,
+            <0.0, 0.0, 0.5, 0.5>>"
+
+        ! audioconvert ! {webrtc_format} ! webrtcechoprobe
+        
+        ! audioconvert ! {jack_format} ! jackaudiosink name=speakers
+    """
+
     
     pre_delay = 0.1
     
@@ -246,7 +287,7 @@ def main(args):
     """
 
     #(bitmask)0x0000000000000107
-    pipeline = Gst.parse_launch(stripcomments(full))
+    pipeline = Gst.parse_launch(stripcomments(lagtest))
     #pipeline.set_property('async-handling', True)
     #pipeline.set_property('delay', 1000)
     
